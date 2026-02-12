@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 	"github.com/stremovskyy/go-nova/internal/jsonutil"
@@ -30,6 +33,7 @@ type Client struct {
 	httpClient     *http.Client
 	signer         Signer
 	logger         log.Logger
+	logBodies      bool
 	retryAttempts  int
 	retryWait      time.Duration
 	defaultHeaders map[string]string
@@ -37,7 +41,7 @@ type Client struct {
 }
 
 // New creates an internal HTTP client.
-func New(httpClient *http.Client, signer Signer, logger log.Logger, retryAttempts int, retryWait time.Duration, defaultHeaders map[string]string, rec recorder.Recorder) *Client {
+func New(httpClient *http.Client, signer Signer, logger log.Logger, retryAttempts int, retryWait time.Duration, defaultHeaders map[string]string, rec recorder.Recorder, logBodies bool) *Client {
 	if httpClient == nil {
 		httpClient = &http.Client{Timeout: 30 * time.Second}
 	}
@@ -54,6 +58,7 @@ func New(httpClient *http.Client, signer Signer, logger log.Logger, retryAttempt
 		httpClient:     httpClient,
 		signer:         signer,
 		logger:         logger,
+		logBodies:      logBodies,
 		retryAttempts:  retryAttempts,
 		retryWait:      retryWait,
 		defaultHeaders: cloneHeaders(defaultHeaders),
@@ -75,7 +80,7 @@ func (c *Client) DoJSON(ctx context.Context, method, url string, body any, out a
 		resp, raw, err := c.doOnce(ctx, method, url, body, out)
 		if err == nil {
 			if resp != nil {
-				c.logger.Debugf("[NovaPay HTTP] response: method=%s url=%s status=%d body=%s", method, url, resp.StatusCode, previewBytes(raw))
+				c.logger.Debugf("[NovaPay HTTP] response: method=%s url=%s status=%d response=%s", method, url, resp.StatusCode, logBody(raw, c.logBodies))
 			}
 			return resp, raw, nil
 		}
@@ -84,7 +89,7 @@ func (c *Client) DoJSON(ctx context.Context, method, url string, body any, out a
 		// Retry only on transient errors.
 		if !isRetryable(err, resp) || attempt == c.retryAttempts {
 			if resp != nil {
-				c.logger.Errorf("[NovaPay HTTP] request failed: method=%s url=%s status=%d err=%v body=%s", method, url, resp.StatusCode, err, previewBytes(raw))
+				c.logger.Errorf("[NovaPay HTTP] request failed: method=%s url=%s status=%d err=%v response=%s", method, url, resp.StatusCode, err, logBody(raw, c.logBodies))
 			} else {
 				c.logger.Errorf("[NovaPay HTTP] request failed: method=%s url=%s err=%v", method, url, err)
 			}
@@ -145,7 +150,7 @@ func (c *Client) doOnce(ctx context.Context, method, url string, body any, out a
 		req.Header.Set("x-sign", sig)
 	}
 
-	c.logger.Debugf("[NovaPay HTTP] request prepared: request_id=%s method=%s url=%s body=%s", requestID, method, url, previewBytes(sigInput))
+	c.logger.Debugf("[NovaPay HTTP] request prepared: request_id=%s method=%s url=%s payload=%s", requestID, method, url, logBody(sigInput, c.logBodies))
 
 	c.recordRequest(ctx, requestID, sigInput)
 
@@ -163,7 +168,7 @@ func (c *Client) doOnce(ctx context.Context, method, url string, body any, out a
 	}
 	c.recordResponse(ctx, requestID, raw)
 
-	c.logger.Debugf("[NovaPay HTTP] response received: request_id=%s method=%s url=%s status=%d body=%s", requestID, method, url, resp.StatusCode, previewBytes(raw))
+	c.logger.Debugf("[NovaPay HTTP] response received: request_id=%s method=%s url=%s status=%d response=%s", requestID, method, url, resp.StatusCode, logBody(raw, c.logBodies))
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		statusErr := &HTTPStatusError{StatusCode: resp.StatusCode, Body: raw}
@@ -207,13 +212,29 @@ func isRetryable(err error, resp *http.Response) bool {
 	if err == nil {
 		return false
 	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
 	var hs *HTTPStatusError
 	if errors.As(err, &hs) {
-		// Retry 5xx.
-		return hs.StatusCode >= 500 && hs.StatusCode != 501
+		// Retry 5xx and rate limiting.
+		return hs.StatusCode == http.StatusTooManyRequests || (hs.StatusCode >= 500 && hs.StatusCode != http.StatusNotImplemented)
 	}
-	// For network errors, retry.
-	if resp == nil {
+
+	// Retry only transport-level errors.
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		if errors.Is(ue.Err, context.Canceled) || errors.Is(ue.Err, context.DeadlineExceeded) {
+			return false
+		}
+		var ne net.Error
+		if errors.As(ue.Err, &ne) {
+			return true
+		}
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) {
 		return true
 	}
 	return false
@@ -284,17 +305,50 @@ func (c *Client) recordError(ctx context.Context, requestID string, err error) {
 	}
 }
 
+func summarizeBytes(b []byte) string {
+	return fmt.Sprintf("size=%d bytes", len(b))
+}
+
+func logBody(b []byte, verbose bool) string {
+	if !verbose {
+		return summarizeBytes(b)
+	}
+
+	if pretty, ok := prettyJSONPreview(b); ok {
+		return pretty
+	}
+	return previewBytes(b)
+}
+
+func prettyJSONPreview(b []byte) (string, bool) {
+	if len(b) == 0 || !json.Valid(b) {
+		return "", false
+	}
+
+	var out bytes.Buffer
+	if err := json.Indent(&out, b, "", "  "); err != nil {
+		return "", false
+	}
+	return truncate(out.String(), 4096), true
+}
+
 func previewBytes(b []byte) string {
 	if len(b) == 0 {
 		return "<empty>"
 	}
-	const max = 1024
 	s := strings.TrimSpace(string(b))
 	if s == "" {
 		return "<empty>"
 	}
-	if len(s) > max {
-		return s[:max] + "...(truncated)"
+	if !utf8.ValidString(s) {
+		return fmt.Sprintf("<binary size=%d bytes>", len(b))
 	}
-	return s
+	return truncate(s, 4096)
+}
+
+func truncate(s string, max int) string {
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return s[:max] + "...(truncated)"
 }

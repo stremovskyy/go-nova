@@ -8,10 +8,15 @@ import (
 
 	go_nova "github.com/stremovskyy/go-nova"
 	"github.com/stremovskyy/go-nova/acquiring"
+	"github.com/stremovskyy/go-nova/examples/internal/dotenv"
 	"github.com/stremovskyy/go-nova/log"
 )
 
 func main() {
+	if _, err := dotenv.LoadNearest(".env"); err != nil {
+		stdlog.Fatalf("load .env: %v", err)
+	}
+
 	privateKeyPath := os.Getenv("NOVAPAY_PRIVATE_KEY_PATH")
 	if privateKeyPath == "" {
 		stdlog.Fatal("set NOVAPAY_PRIVATE_KEY_PATH to your merchant private key PEM path")
@@ -19,6 +24,7 @@ func main() {
 
 	client, err := go_nova.NewClient(
 		go_nova.WithPrivateKeyFile(privateKeyPath),
+		go_nova.WithLogHTTPBodies(true), // enable request/response JSON in debug logs
 	)
 	if err != nil {
 		stdlog.Fatal(err)
@@ -29,11 +35,11 @@ func main() {
 	ctx := context.Background()
 
 	// 1) Create session
-	callbackURL := "https://webhook.site/e7048bac-3cbd-4b77-ac00-7b625add5dd8"
+	callbackURL := "https://webhook.site/130f09be-9e16-4716-88e9-fa3014c38032"
 	session, err := client.Acquiring().CreateSession(
 		ctx, &acquiring.CreateSessionRequest{
 			MerchantID:  "1",
-			ClientPhone: "+38068365465",
+			ClientPhone: "+380982850620",
 			CallbackURL: &callbackURL,
 		},
 	)

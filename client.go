@@ -51,8 +51,8 @@ func NewClient(opts ...Option) (Nova, error) {
 	}
 
 	c := &Client{cfg: cfg}
-	c.externalHTTP = httpclient.New(cfg.httpClient, cfg.externalSigner, cfg.logger, cfg.retryAttempts, cfg.retryWait, nil, cfg.recorder)
-	c.comfortHTTP = httpclient.New(cfg.httpClient, cfg.comfortSigner, cfg.logger, cfg.retryAttempts, cfg.retryWait, comfortHeaders, cfg.recorder)
+	c.externalHTTP = httpclient.New(cfg.httpClient, cfg.externalSigner, cfg.logger, cfg.retryAttempts, cfg.retryWait, nil, cfg.recorder, cfg.logBodies)
+	c.comfortHTTP = httpclient.New(cfg.httpClient, cfg.comfortSigner, cfg.logger, cfg.retryAttempts, cfg.retryWait, comfortHeaders, cfg.recorder, cfg.logBodies)
 
 	c.acquiring = &AcquiringService{c: c}
 	c.comfort = &ComfortService{c: c}
@@ -930,6 +930,10 @@ func validateCheckoutSessionRequest(req *checkout.SessionRequest) error {
 
 func validateComfortCreateOperations(req comfort.CreateOperationsRequest) error {
 	ve := &ValidationError{}
+	if len(req.RawBody) == 0 {
+		ve.Add("RAW_BODY", "must contain at least one operation")
+		return ve
+	}
 	for i, op := range req.RawBody {
 		if op.Amount == "" {
 			ve.Add(fmt.Sprintf("RAW_BODY[%d].amount", i), "is required")

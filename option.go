@@ -24,6 +24,7 @@ type config struct {
 
 	httpClient *http.Client
 	logger     log.Logger
+	logBodies  bool
 
 	retryAttempts int
 	retryWait     time.Duration
@@ -83,6 +84,16 @@ func WithLogger(logger log.Logger) Option {
 			return nil
 		}
 		cfg.logger = logger
+		return nil
+	}
+}
+
+// WithLogHTTPBodies enables verbose request/response body logging for debugging.
+//
+// Disabled by default because bodies may contain sensitive data.
+func WithLogHTTPBodies(enabled bool) Option {
+	return func(cfg *config) error {
+		cfg.logBodies = enabled
 		return nil
 	}
 }

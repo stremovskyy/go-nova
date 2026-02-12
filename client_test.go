@@ -118,16 +118,21 @@ func TestValidateCreateSessionDoesNotRequireCallbackURL(t *testing.T) {
 }
 
 func TestValidateComfortCreateOperationsRawBody(t *testing.T) {
-	if err := validateComfortCreateOperations(comfort.CreateOperationsRequest{}); err != nil {
-		t.Fatalf("expected empty RAW_BODY to pass validation, got %v", err)
+	err := validateComfortCreateOperations(comfort.CreateOperationsRequest{})
+	ve, ok := err.(*ValidationError)
+	if !ok {
+		t.Fatalf("expected ValidationError, got %T (%v)", err, err)
+	}
+	if len(ve.Fields) != 1 || ve.Fields[0].Field != "RAW_BODY" {
+		t.Fatalf("unexpected validation fields for empty RAW_BODY: %+v", ve.Fields)
 	}
 
-	err := validateComfortCreateOperations(comfort.CreateOperationsRequest{
+	err = validateComfortCreateOperations(comfort.CreateOperationsRequest{
 		RawBody: []comfort.CreateOperationItem{
 			{Amount: ""},
 		},
 	})
-	ve, ok := err.(*ValidationError)
+	ve, ok = err.(*ValidationError)
 	if !ok {
 		t.Fatalf("expected ValidationError, got %T (%v)", err, err)
 	}

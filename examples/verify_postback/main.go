@@ -9,9 +9,14 @@ import (
 
 	go_nova "github.com/stremovskyy/go-nova"
 	"github.com/stremovskyy/go-nova/acquiring"
+	"github.com/stremovskyy/go-nova/examples/internal/dotenv"
 )
 
 func main() {
+	if _, err := dotenv.LoadNearest(".env"); err != nil {
+		stdlog.Fatalf("load .env: %v", err)
+	}
+
 	publicKeyPath := os.Getenv("NOVAPAY_PUBLIC_KEY_PATH")
 	if publicKeyPath == "" {
 		stdlog.Fatal("set NOVAPAY_PUBLIC_KEY_PATH to NovaPay public key PEM path")

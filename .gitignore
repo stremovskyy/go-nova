@@ -43,3 +43,4 @@ tmp/
 *.key
 *.crt
 *.p12
+/keys/
