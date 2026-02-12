@@ -6,6 +6,7 @@ import (
 	stdlog "log"
 	"net/http"
 	"os"
+	"strings"
 
 	go_nova "github.com/stremovskyy/go-nova"
 	"github.com/stremovskyy/go-nova/acquiring"
@@ -30,15 +31,23 @@ func main() {
 	}
 
 	http.HandleFunc("/novapay/callback", func(w http.ResponseWriter, r *http.Request) {
+		defer func() { _ = r.Body.Close() }()
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		xSign := r.Header.Get("x-sign")
+		xSign := strings.TrimSpace(r.Header.Get("x-sign"))
+		if xSign == "" {
+			stdlog.Printf("auth failed: missing x-sign header")
+			http.Error(w, "auth failed", http.StatusUnauthorized)
+			return
+		}
+
 		if err := client.Verify(body, xSign); err != nil {
-			http.Error(w, "invalid signature", http.StatusUnauthorized)
+			stdlog.Printf("auth failed: %v", err)
+			http.Error(w, "auth failed", http.StatusUnauthorized)
 			return
 		}
 
@@ -57,6 +66,6 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 	})
 
-	stdlog.Println("listening on :8080")
+	stdlog.Printf("listening on :8080 (public key=%s)", publicKeyPath)
 	stdlog.Fatal(http.ListenAndServe(":8080", nil))
 }

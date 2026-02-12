@@ -6,10 +6,12 @@ import (
 	stdlog "log"
 	"os"
 
+	"github.com/google/uuid"
+
 	go_nova "github.com/stremovskyy/go-nova"
 	"github.com/stremovskyy/go-nova/acquiring"
 	"github.com/stremovskyy/go-nova/examples/internal/dotenv"
-	"github.com/stremovskyy/go-nova/log"
+	"github.com/stremovskyy/go-nova/internal/utils"
 )
 
 func main() {
@@ -30,7 +32,7 @@ func main() {
 		stdlog.Fatal(err)
 	}
 
-	client.SetLogLevel(log.LevelDebug)
+	// client.SetLogLevel(log.LevelDebug)
 
 	ctx := context.Background()
 
@@ -38,7 +40,7 @@ func main() {
 	callbackURL := "https://webhook.site/130f09be-9e16-4716-88e9-fa3014c38032"
 	session, err := client.Acquiring().CreateSession(
 		ctx, &acquiring.CreateSessionRequest{
-			MerchantID:  "1",
+			MerchantID:  "2",
 			ClientPhone: "+380982850620",
 			CallbackURL: &callbackURL,
 		},
@@ -50,9 +52,10 @@ func main() {
 	// 2) Add payment and get payment URL
 	payment, err := client.Acquiring().AddPayment(
 		ctx, &acquiring.AddPaymentRequest{
-			MerchantID: "1",
+			MerchantID: "2",
 			SessionID:  session.ID,
 			Amount:     1.25,
+			ExternalID: utils.Ref(uuid.New().String()),
 		},
 	)
 	if err != nil {

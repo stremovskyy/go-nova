@@ -18,8 +18,10 @@ go get github.com/stremovskyy/go-nova@latest
 
 - Go `1.23+`
 - NovaPay merchant private RSA key (for request signing)
-- NovaPay public RSA key (for callback signature verification)
+- NovaPay callback verification public RSA key (for incoming `x-sign`)
 - Comfort merchant id for Comfort API (`x-merchant-id`)
+
+Note: callback verification key is **not** your merchant public key from the Authentication page.
 
 ## Quick Start (Acquiring)
 

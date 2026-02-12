@@ -11,6 +11,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // HashAlgorithm controls which hash is used for RSA PKCS#1 v1.5 signatures.
@@ -66,9 +67,9 @@ func (s *RSASigner) Verify(body []byte, signatureBase64 string) error {
 	if s == nil || s.PublicKey == nil {
 		return errors.New("signature: public key is not configured")
 	}
-	sig, err := base64.StdEncoding.DecodeString(signatureBase64)
+	sig, err := decodeSignatureBase64(signatureBase64)
 	if err != nil {
-		return fmt.Errorf("signature: invalid base64 signature: %w", err)
+		return err
 	}
 	h, sum, err := digest(s.Hash, body)
 	if err != nil {
@@ -78,6 +79,23 @@ func (s *RSASigner) Verify(body []byte, signatureBase64 string) error {
 		return fmt.Errorf("signature: verify failed: %w", err)
 	}
 	return nil
+}
+
+func decodeSignatureBase64(signatureBase64 string) ([]byte, error) {
+	signatureBase64 = strings.TrimSpace(signatureBase64)
+	if signatureBase64 == "" {
+		return nil, errors.New("signature: empty signature")
+	}
+	sig, err := base64.StdEncoding.DecodeString(signatureBase64)
+	if err == nil {
+		return sig, nil
+	}
+	// Some integrations/proxies may strip trailing "=" padding.
+	sig, rawErr := base64.RawStdEncoding.DecodeString(signatureBase64)
+	if rawErr == nil {
+		return sig, nil
+	}
+	return nil, fmt.Errorf("signature: invalid base64 signature: std=%v; raw=%v", err, rawErr)
 }
 
 // ParseRSAPrivateKeyPEM parses a PEM encoded RSA private key.
