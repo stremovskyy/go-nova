@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	stdlog "log"
+	"os"
 
 	go_nova "github.com/stremovskyy/go-nova"
 	"github.com/stremovskyy/go-nova/acquiring"
@@ -11,8 +12,13 @@ import (
 )
 
 func main() {
+	privateKeyPath := os.Getenv("NOVAPAY_PRIVATE_KEY_PATH")
+	if privateKeyPath == "" {
+		stdlog.Fatal("set NOVAPAY_PRIVATE_KEY_PATH to your merchant private key PEM path")
+	}
+
 	client, err := go_nova.NewClient(
-		go_nova.WithPrivateKeyFile("./merchant-private.pem"),
+		go_nova.WithPrivateKeyFile(privateKeyPath),
 	)
 	if err != nil {
 		stdlog.Fatal(err)
